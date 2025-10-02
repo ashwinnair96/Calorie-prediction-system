@@ -1,0 +1,146 @@
+# ===============================
+# Calorie Prediction System
+# ===============================
+
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore')
+
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+
+# Models
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
+
+
+# -------------------------------
+# 1. Read CSV files
+# -------------------------------
+def read_csv(file_path):
+    return pd.read_csv(file_path)
+
+
+# -------------------------------
+# 2. Dataset info & statistics
+# -------------------------------
+def dataset_info_statistics(data):
+    print("Dataset Information:")
+    print(data.info())
+    print("\nBasic Statistics for Numerical Columns:")
+    print(data.describe())
+    print("\n")
+
+
+# -------------------------------
+# 3. Check null values
+# -------------------------------
+def check_null(data):
+    null_counts = data.isnull().sum()
+    print("Null Values in the Dataset:")
+    return null_counts
+
+
+# -------------------------------
+# 4. Check duplicates
+# -------------------------------
+def check_duplicates(data):
+    return data.duplicated().any()
+
+
+# -------------------------------
+# 5. Plot graphs
+# -------------------------------
+def plot_graph(data):
+    numerical_columns = data.select_dtypes(include=np.number).columns
+    for column in numerical_columns:
+        plt.figure(figsize=(5, 3))
+        sns.histplot(data[column], kde=True)
+        plt.title(f"Histogram for {column}")
+        plt.xlabel(column)
+        plt.ylabel("Frequency")
+        plt.show()
+
+    categorical_columns = data.select_dtypes(include='object').columns
+    for column in categorical_columns:
+        plt.figure(figsize=(5, 3))
+        sns.countplot(x=data[column])
+        plt.title(f'Countplot for {column}')
+        plt.xlabel(column)
+        plt.ylabel('Count')
+        plt.xticks(rotation=45)
+        plt.show()
+
+
+# -------------------------------
+# 6. Separate features & target
+# -------------------------------
+def seperate_features_target(data, target_column):
+    X = data.drop(columns=[target_column], axis=1)
+    y = data[target_column]
+    return X, y
+
+
+# -------------------------------
+# Load Data
+# -------------------------------
+calories = read_csv('calories.csv')
+exercise = read_csv('exercise.csv')
+data = pd.merge(calories, exercise, on='User_ID')
+
+dataset_info_statistics(data)
+print(check_null(data))
+
+# -------------------------------
+# Prepare Data
+# -------------------------------
+X, y = seperate_features_target(data, 'Calories')
+X = X.drop(columns=['User_ID'])
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=42)
+
+# -------------------------------
+# Preprocessing (OneHot for Gender + Scaling)
+# -------------------------------
+preprocessor = ColumnTransformer(transformers=[
+    ('gender', OneHotEncoder(drop='first'), ['Gender']),
+    ('num', StandardScaler(), ['Age', 'Height', 'Weight', 'Duration', 'Heart_Rate', 'Body_Temp'])
+])
+
+# -------------------------------
+# Models to Compare
+# -------------------------------
+models = {
+    "Linear Regression": LinearRegression(),
+    "Random Forest": RandomForestRegressor(random_state=42),
+    "XGBoost": XGBRegressor(random_state=42, objective='reg:squarederror')
+}
+
+# -------------------------------
+# Training & Evaluation
+# -------------------------------
+for name, model in models.items():
+    pipeline = Pipeline([
+        ("preprocessor", preprocessor),
+        ("model", model)
+    ])
+    pipeline.fit(X_train, y_train)
+    preds = pipeline.predict(X_test)
+
+    r2 = r2_score(y_test, preds)
+    rmse = np.sqrt(mean_squared_error(y_test, preds))
+
+    print(f"\n{name}:")
+    print("R² Score:", round(r2, 4))
+    print("RMSE:", round(rmse, 4))
+
+    # Cross-validation
+    cv_scores = cross_val_score(pipeline, X, y, cv=5, scoring="r2")
+    print("Cross-Validation R²:", round(cv_scores.mean(), 4))
